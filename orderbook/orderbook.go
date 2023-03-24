@@ -2,7 +2,9 @@ package orderbook
 
 import (
 	"fmt"
+	"math/rand"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -14,6 +16,8 @@ type Match struct {
 }
 
 type Order struct {
+	ID        int64
+	UserID    int64
 	Size      float64
 	Bid       bool
 	Limit     *Limit
@@ -22,12 +26,14 @@ type Order struct {
 
 type Orders []*Order
 
-func (o Orders) len() int           { return len(o) }
+func (o Orders) Len() int           { return len(o) }
 func (o Orders) Swap(i, j int)      { o[i], o[j] = o[j], o[i] }
 func (o Orders) Less(i, j int) bool { return o[i].Timestamp < o[j].Timestamp }
 
-func NewOrder(bid bool, size float64) *Order {
+func NewOrder(bid bool, size float64, userID int64) *Order {
 	return &Order{
+		UserID:    userID,
+		ID:        int64(rand.Intn(1000000000)),
 		Size:      size,
 		Bid:       bid,
 		Timestamp: time.Now().UnixNano(),
@@ -89,13 +95,25 @@ func (l *Limit) DeleteOrder(o *Order) {
 }
 
 func (l *Limit) Fill(o *Order) []Match {
-	matches := []Match{}
+	var (
+		matches        []Match
+		ordersToDelete []*Order
+	)
 	for _, order := range l.Orders {
 		match := l.fillOrder(order, o)
 		matches = append(matches, match)
+		l.TotalVolume -= match.SizeFilled
+
+		if order.IsFilled() {
+			ordersToDelete = append(ordersToDelete, order)
+		}
 		if o.IsFilled() {
 			break
 		}
+	}
+
+	for _, order := range ordersToDelete {
+		l.DeleteOrder(order)
 	}
 	return matches
 }
@@ -137,6 +155,7 @@ type OrderBook struct {
 	asks []*Limit
 	bids []*Limit
 
+	mu        sync.RWMutex
 	AskLimits map[float64]*Limit
 	BidLimits map[float64]*Limit
 
@@ -149,14 +168,15 @@ func NewOrderBook() *OrderBook {
 		bids:      []*Limit{},
 		AskLimits: make(map[float64]*Limit),
 		BidLimits: make(map[float64]*Limit),
+		Orders:    make(map[int64]*Order),
 	}
 }
 
 func (ob *OrderBook) PlaceMarketOrder(o *Order) []Match {
 	matches := []Match{}
 	if o.Bid {
-		if o.Size > ob.askTotalVolume() {
-			panic("not enough volume sitting in the books")
+		if o.Size > ob.AskTotalVolume() {
+			panic(fmt.Errorf("not enough volume [size: %.2f] for market order [size: %.2f]", ob.AskTotalVolume(), o.Size))
 		}
 		for _, limit := range ob.Asks() {
 			limitMatches := limit.Fill(o)
@@ -164,13 +184,26 @@ func (ob *OrderBook) PlaceMarketOrder(o *Order) []Match {
 		}
 	} else {
 
+		if o.Size > ob.BidTotalVolume() {
+			panic(fmt.Errorf("not enough volume [size: %.2f] for market order [size: %.2f]", ob.BidTotalVolume(), o.Size))
+		}
+		for _, limit := range ob.Bids() {
+			limitMatches := limit.Fill(o)
+			matches = append(matches, limitMatches...)
+			if len(limit.Orders) == 0 {
+				ob.clearLimit(true, limit)
+			}
+		}
 	}
 	return matches
 }
 
 func (ob *OrderBook) PlaceLimitOrder(price float64, o *Order) {
-
 	var limit *Limit
+
+	ob.mu.Lock()
+	defer ob.mu.Unlock()
+
 	if o.Bid {
 		limit = ob.BidLimits[price]
 	} else {
@@ -179,7 +212,7 @@ func (ob *OrderBook) PlaceLimitOrder(price float64, o *Order) {
 
 	if limit == nil {
 		limit = NewLimit(price)
-		limit.AddOrder(o)
+
 		if o.Bid {
 			ob.bids = append(ob.bids, limit)
 			ob.BidLimits[price] = limit
@@ -188,6 +221,37 @@ func (ob *OrderBook) PlaceLimitOrder(price float64, o *Order) {
 			ob.AskLimits[price] = limit
 		}
 	}
+
+	ob.Orders[o.ID] = o
+	limit.AddOrder(o)
+}
+
+func (ob *OrderBook) clearLimit(bid bool, l *Limit) {
+	if bid {
+
+		delete(ob.BidLimits, l.Price)
+		for i := 0; i < len(ob.bids); i++ {
+			if ob.bids[i] == l {
+				ob.bids[i] = ob.bids[len(ob.bids)-1]
+				ob.bids = ob.bids[:len(ob.bids)-1]
+			}
+		}
+
+	} else {
+		delete(ob.AskLimits, l.Price)
+		for i := 0; i < len(ob.asks); i++ {
+			if ob.asks[i] == l {
+				ob.asks[i] = ob.asks[len(ob.asks)-1]
+				ob.asks = ob.asks[:len(ob.asks)-1]
+			}
+		}
+	}
+}
+
+func (ob *OrderBook) CancelOrder(o *Order) {
+	limit := o.Limit
+	limit.DeleteOrder(o)
+	delete(ob.Orders, o.ID)
 }
 
 func (ob *OrderBook) BidTotalVolume() float64 {
@@ -198,7 +262,7 @@ func (ob *OrderBook) BidTotalVolume() float64 {
 	return totalVolume
 }
 
-func (ob *OrderBook) askTotalVolume() float64 {
+func (ob *OrderBook) AskTotalVolume() float64 {
 	totalVolume := 0.0
 	for i := 0; i < len(ob.asks); i++ {
 		totalVolume += ob.asks[i].TotalVolume
