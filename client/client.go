@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"crypto-exchange/orderbook"
 	"crypto-exchange/server"
 	"encoding/json"
 	"fmt"
@@ -25,6 +26,86 @@ type PlaceOrderParams struct {
 	Bid    bool
 	Price  float64
 	Size   float64
+}
+
+func (c *Client) GetTrades(market string) ([]*orderbook.Trades, error) {
+	e := fmt.Sprintf("%s/trades/%s", Endpoint, market)
+	req, err := http.NewRequest(http.MethodGet, e, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	trades := []*orderbook.Trades{}
+	if err := json.NewDecoder(resp.Body).Decode(&trades); err != nil {
+		return nil, err
+	}
+
+	return trades, nil
+}
+
+func (c *Client) GetOrders(userID int64) (*server.GetOrdersResponse, error) {
+	e := fmt.Sprintf("%s/order/%d", Endpoint, userID)
+	req, err := http.NewRequest(http.MethodGet, e, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	orders := server.GetOrdersResponse{}
+	if err := json.NewDecoder(resp.Body).Decode(&orders); err != nil {
+		return nil, err
+	}
+
+	return &orders, nil
+}
+
+func (c *Client) GetBestAsk() (*server.Order, error) {
+	e := fmt.Sprintf("%s/book/ETH/ask", Endpoint)
+	req, err := http.NewRequest(http.MethodGet, e, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	order := &server.Order{}
+	if err := json.NewDecoder(resp.Body).Decode(order); err != nil {
+		return nil, err
+	}
+
+	return order, err
+}
+
+func (c *Client) GetBestBid() (*server.Order, error) {
+	e := fmt.Sprintf("%s/book/ETH/bid", Endpoint)
+	req, err := http.NewRequest(http.MethodGet, e, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	order := &server.Order{}
+	if err := json.NewDecoder(resp.Body).Decode(order); err != nil {
+		return nil, err
+	}
+
+	return order, err
 }
 
 func (c *Client) CancelOrder(orderID int64) error {

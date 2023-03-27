@@ -3,6 +3,7 @@ package main
 import (
 	"crypto-exchange/server"
 	"fmt"
+	"log"
 	"time"
 
 	"crypto-exchange/client"
@@ -66,9 +67,59 @@ func main() {
 	}
 	fmt.Println("placed market order_id => ", resp.OrderID)
 
+	bestBidPrice, err := c.GetBestBid()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("bestBidPrice :", bestBidPrice)
+
+	bestAskPrice, err := c.GetBestAsk()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("bestAskPrice: ", bestAskPrice)
+
 	// 		time.Sleep(1 * time.Second)
 	// 	}
 	// }()
 
 	select {}
+}
+
+func marketOrderPlacer(c *client.Client) {
+	ticker := time.NewTicker(5 * time.Second)
+
+	for {
+		otherMarketSell := &client.PlaceOrderParams{
+			UserID: 1,
+			Bid:    false,
+			Size:   5000,
+		}
+		orderResp, err := c.PlaceMarketOrder(otherMarketSell)
+		if err != nil {
+			log.Println(orderResp.OrderID)
+		}
+
+		marketSell := &client.PlaceOrderParams{
+			UserID: 777,
+			Bid:    false,
+			Size:   2000,
+		}
+		orderResp, err = c.PlaceMarketOrder(marketSell)
+		if err != nil {
+			log.Println(orderResp.OrderID)
+		}
+
+		marketBuyOrder := &client.PlaceOrderParams{
+			UserID: 777,
+			Bid:    false,
+			Size:   4000,
+		}
+		orderResp, err = c.PlaceMarketOrder(marketBuyOrder)
+		if err != nil {
+			log.Println(orderResp.OrderID)
+		}
+
+		<-ticker.C
+	}
 }

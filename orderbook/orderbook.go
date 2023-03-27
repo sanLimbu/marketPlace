@@ -151,9 +151,17 @@ func (l *Limit) fillOrder(a, b *Order) Match {
 
 }
 
+type Trades struct {
+	Price     float64
+	Size      float64
+	Bid       bool
+	Timestamp int64
+}
+
 type OrderBook struct {
-	asks []*Limit
-	bids []*Limit
+	asks   []*Limit
+	bids   []*Limit
+	Trades []*Trades
 
 	mu        sync.RWMutex
 	AskLimits map[float64]*Limit
@@ -166,6 +174,7 @@ func NewOrderBook() *OrderBook {
 	return &OrderBook{
 		asks:      []*Limit{},
 		bids:      []*Limit{},
+		Trades:    []*Trades{},
 		AskLimits: make(map[float64]*Limit),
 		BidLimits: make(map[float64]*Limit),
 		Orders:    make(map[int64]*Order),
@@ -194,6 +203,16 @@ func (ob *OrderBook) PlaceMarketOrder(o *Order) []Match {
 				ob.clearLimit(true, limit)
 			}
 		}
+	}
+
+	for _, match := range matches {
+		trade := &Trades{
+			Price:     match.Price,
+			Size:      match.SizeFilled,
+			Timestamp: time.Now().UnixNano(),
+			Bid:       o.Bid,
+		}
+		ob.Trades = append(ob.Trades, trade)
 	}
 	return matches
 }
@@ -252,6 +271,10 @@ func (ob *OrderBook) CancelOrder(o *Order) {
 	limit := o.Limit
 	limit.DeleteOrder(o)
 	delete(ob.Orders, o.ID)
+
+	if len(limit.Orders) == 0 {
+		ob.clearLimit(o.Bid, limit)
+	}
 }
 
 func (ob *OrderBook) BidTotalVolume() float64 {
