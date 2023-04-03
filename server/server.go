@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/labstack/echo/v4"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -89,38 +90,9 @@ func StartServer() {
 		log.Fatal(err)
 	}
 
-	buyeraddress := "0xFFcf8FDEE72ac11b5c542428B35EEF5769C409f0"
-	buyerbalance, err := client.BalanceAt(context.Background(), common.HexToAddress(buyeraddress), nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(buyerbalance)
-
-	selleraddress := "0x22d491Bde2303f2f43325b2108D26f1eAbA1e32b"
-	sellerbalance, err := client.BalanceAt(context.Background(), common.HexToAddress(selleraddress), nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(sellerbalance)
-
-	johnaddress := "0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1"
-	johnbalance, err := client.BalanceAt(context.Background(), common.HexToAddress(johnaddress), nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(johnbalance)
-
-	pkStr1 := "6cbed15c793ce57650b9877cf6fa156fbef513c4e6134f022a85b1ffdd59b2a1"
-	user1 := NewUser(pkStr1, 1)
-	ex.Users[user1.ID] = user1
-
-	pkStr2 := "6370fd033278c143179d81c5526140625662b8daa446c22ee2d73db3707e620c"
-	user2 := NewUser(pkStr2, 2)
-	ex.Users[user2.ID] = user2
-
-	johnPk := "4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d"
-	john := NewUser(johnPk, 0)
-	ex.Users[john.ID] = john
+	ex.registerUser("6cbed15c793ce57650b9877cf6fa156fbef513c4e6134f022a85b1ffdd59b2a1", 1)
+	ex.registerUser("6370fd033278c143179d81c5526140625662b8daa446c22ee2d73db3707e620c", 2)
+	ex.registerUser("4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d", 0)
 
 	e.HTTPErrorHandler = httpErrorHandler
 
@@ -188,6 +160,14 @@ func NewExchange(exchangePrivateKey string, client *ethclient.Client) (*Exchange
 type GetOrdersResponse struct {
 	Asks []Order
 	Bids []Order
+}
+
+func (ex *Exchange) registerUser(pk string, userId int64) {
+	user := NewUser(pk, userId)
+	ex.Users[userId] = user
+	logrus.WithFields(logrus.Fields{
+		"id": userId,
+	}).Info("new exchange user")
 }
 
 func (ex *Exchange) handleGetOrders(c echo.Context) error {
@@ -279,35 +259,45 @@ type PriceResponse struct {
 
 func (ex *Exchange) handleGetBestBid(c echo.Context) error {
 
-	market := Market(c.Param("market"))
-	ob := ex.orderbooks[market]
+	var (
+		market = Market(c.Param("market"))
+		ob     = ex.orderbooks[market]
+		order  = Order{}
+	)
 
 	if len(ob.Bids()) == 0 {
-		return fmt.Errorf("the bids are empty")
+		return c.JSON(http.StatusOK, order)
 	}
 
-	bestBidPrice := ob.Bids()[0].Price
-	pr := PriceResponse{
-		Price: bestBidPrice,
-	}
-	return c.JSON(http.StatusOK, pr)
+	bestLimit := ob.Bids()[0]
+	bestOrder := bestLimit.Orders[0]
+
+	order.Price = bestLimit.Price
+	order.UserID = bestOrder.UserID
+
+	return c.JSON(http.StatusOK, order)
 
 }
 
 func (ex *Exchange) handleGetBestAsk(c echo.Context) error {
 
-	market := Market(c.Param("market"))
-	ob := ex.orderbooks[market]
+	var (
+		market = Market(c.Param("market"))
+		ob     = ex.orderbooks[market]
+		order  = Order{}
+	)
 
 	if len(ob.Asks()) == 0 {
-		return fmt.Errorf("the asks are empty")
+		return c.JSON(http.StatusOK, order)
 	}
 
-	bestAsksPrice := ob.Asks()[0].Price
-	pr := PriceResponse{
-		Price: bestAsksPrice,
-	}
-	return c.JSON(http.StatusOK, pr)
+	bestLimit := ob.Asks()[0]
+	bestOrder := bestLimit.Orders[0]
+
+	order.Price = bestLimit.Price
+	order.UserID = bestOrder.UserID
+
+	return c.JSON(http.StatusOK, order)
 
 }
 
@@ -361,8 +351,14 @@ func (ex *Exchange) handlePlaceMarketOrder(market Market, order *orderbook.Order
 		sumPrice += matches[i].Price
 	}
 
-	//avgPrice := sumPrice / float64(len(matches))
+	avgPrice := sumPrice / float64(len(matches))
+	log.Printf("filled market order => %d | size : [%.2f] | avgPrice: [%.2f]", order.ID, totalSizeFilled, avgPrice)
 
+	logrus.WithFields(logrus.Fields{
+		"type":     order.Type(),
+		"size":     totalSizeFilled,
+		"avgPrice": avgPrice,
+	}).Info("filled market order")
 	newOrderMap := make(map[int64][]*orderbook.Order)
 
 	ex.mu.Lock()
