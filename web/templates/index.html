@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebSocket Example</title>
+  <script src="web/static/js/websocket.js"></script>
+</head>
+<body>
+  <h1>WebSocket Example</h1>
+  <form id="message-form">
+    <input type="text" id="message-input" placeholder="Enter a message">
+    <button type="submit">Send</button>
+  </form>
+
+  <script>
+    // Access the message form and input element
+    const messageForm = document.getElementById("message-form");
+    const messageInput = document.getElementById("message-input");
+
+    // Event handler for submitting the form
+    messageForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const message = messageInput.value;
+      sendMessage(message);
+      messageInput.value = "";
+    });
+  </script>
+</body>
+</html>
