@@ -19,8 +19,8 @@ socket.onmessage = (event) => {
   
   // Handle the received message as needed
   // For example, parse the message as JSON
-  const parsedMessage = JSON.parse(message);
-  console.log("Parsed message:", parsedMessage);
+  // const parsedMessage = JSON.parse(message);
+  // console.log("Parsed message:", parsedMessage);
 
   // Perform specific actions based on the received message
   if (parsedMessage.type === "notification") {

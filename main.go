@@ -52,7 +52,6 @@ func main() {
 
 	// Handle WebSocket connections and Kafka messages
 	go server.HandleConnections()
-	go k.ConsumeMessages(c, server.BroadcastMessages())
 
 	// Set up HTTP routes
 	http.Handle("/ws", websocket.Handler(server.HandleWebSocket))
@@ -79,25 +78,12 @@ func main() {
 		http.ServeFile(w, r, "web/templates/index.html")
 	})
 
-	// http.Handle("/orderbookfeed", websocket.Handler(func(ws *websocket.Conn) {
-	// 	// Start a goroutine to handle outgoing messages
-	// 	go handleMessages(ws, server.Messages)
-
-	// }))
+	go k.ConsumeMessages(c, server.BroadcastMessages())
 
 	// Start the server
 	log.Println("Server listening on :3000")
 	log.Fatal(http.ListenAndServe(":3000", nil))
 
-}
-
-func handleMessages(ws *websocket.Conn, messages <-chan string) {
-	for message := range messages {
-		err := websocket.Message.Send(ws, message)
-		if err != nil {
-			log.Printf("Error sending message to WebSocket client: %v", err)
-		}
-	}
 }
 
 // func main() {
