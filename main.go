@@ -79,11 +79,11 @@ func main() {
 		http.ServeFile(w, r, "web/templates/index.html")
 	})
 
-	http.Handle("/orderbookfeed", websocket.Handler(func(ws *websocket.Conn) {
-		// Start a goroutine to handle outgoing messages
-		go handleMessages(ws, server.Messages)
+	// http.Handle("/orderbookfeed", websocket.Handler(func(ws *websocket.Conn) {
+	// 	// Start a goroutine to handle outgoing messages
+	// 	go handleMessages(ws, server.Messages)
 
-	}))
+	// }))
 
 	// Start the server
 	log.Println("Server listening on :3000")
